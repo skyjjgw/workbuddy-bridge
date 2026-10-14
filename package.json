@@ -1,10 +1,10 @@
 {
   "name": "workbuddy-bridge",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "description": "把本机已登录的 WorkBuddy 模型暴露成本地 OpenAI 兼容端点，供天枢（Tianshu）「自定义服务商」接入",
   "type": "module",
-  "main": "src/server.mjs",
+  "main": "src/desktop/main.mjs",
   "engines": {
     "node": ">=22"
   },
@@ -20,9 +20,38 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "start": "node src/server.mjs",
+    "desktop": "electron .",
+    "desktop:dev": "electron . --dev",
     "setup": "node scripts/setup.mjs",
     "doctor": "node scripts/doctor.mjs",
     "pack": "node scripts/pack.mjs",
+    "pack:desktop": "npm run build && electron-builder --win portable",
+    "test": "node --test tests/*.test.mjs",
     "install-autostart": "node scripts/install-autostart.mjs"
+  },
+  "devDependencies": {
+    "electron": "44.7.2",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "com.skymoni.workbuddybridge",
+    "productName": "WorkBuddy Bridge",
+    "asar": true,
+    "directories": {
+      "output": "dist-desktop"
+    },
+    "files": [
+      "src/**/*",
+      "lib/**/*",
+      "package.json",
+      "LICENSE",
+      "THIRD_PARTY_NOTICES.md"
+    ],
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "artifactName": "WorkBuddy-Bridge-${version}-portable.${ext}"
+    }
   }
 }

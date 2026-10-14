@@ -1,6 +1,7 @@
 # 本机运行态 —— 绝不能提交（含 API Key）
 data/
 dist/
+dist-desktop/
 *.log
 
 # 构建输入：由 scripts/build.mjs 从上游源码收拢而来，

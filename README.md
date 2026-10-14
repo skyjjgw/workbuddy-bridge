@@ -1,7 +1,8 @@
 # workbuddy-bridge
 
-把本机 **WorkBuddy**（腾讯 CodeBuddy / WorkBuddy AI）桌面端**已登录的模型**，
-接进 **天枢（Tianshu）** 的「自定义服务商」。
+把 **WorkBuddy**（腾讯 CodeBuddy / WorkBuddy AI）账号与模型接进
+**天枢（Tianshu）** 的「自定义服务商」。2.0 起提供独立桌面控制台，
+可以直接登录账号、查看积分与模型倍率、检测链路并一键接入天枢。
 
 ```
 天枢 ──(OpenAI /v1)──▶ 本桥接 ──(WorkBuddy /v2)──▶ copilot.tencent.com / workbuddy.ai
@@ -13,9 +14,10 @@
 
 ## 给使用者（只想用，不想看代码）
 
-1. 装好**天枢**，装好 **WorkBuddy 桌面端并登录**
-2. 下载 `workbuddy-bridge-<版本>.zip`，解压
-3. 双击 **`start.cmd`**，按提示走完
+1. 装好并启动**天枢**
+2. 下载 `WorkBuddy-Bridge-<版本>-portable.exe`
+3. 双击运行；已有 WorkBuddy 登录会自动识别，没有账号时可在软件内网页登录
+4. 点击“接入天枢”
 
 之后打开天枢 → **设置 → 模型提供商** → 选 `workbuddy`（国内版）或
 `workbuddy-global`（国际版）。
@@ -23,13 +25,24 @@
 > 天枢自带 Node 运行时（`node-runtime\win-x64\tianshu-runtime.exe`），
 > 所以**不需要另外安装 Node**。脚本会自己找。
 
-卸载：双击 `Uninstall.cmd`。
+旧版脚本 ZIP 仍可用，但新的桌面版是推荐入口。
+
+桌面控制台会显示：
+
+- 国内版与国际版账号、剩余积分
+- 上游真实模型目录、上下文规格、视觉能力与积分倍率
+- 桥接端口、天枢联通检测结果
+- 真实模型实测（执行前会明确提示该操作消耗少量积分）
+- 开机自启和系统托盘后台运行
 
 ## 给开发者
 
 ```bash
 npm run build      # 打包核心 → lib/core.mjs（已入库，通常不用重跑）
 npm start          # 启动桥接
+npm run desktop    # 启动桌面控制台
+npm run test       # OAuth 与桌面安全边界测试
+npm run pack:desktop # 打 Windows 便携 EXE → dist-desktop/
 node scripts/setup.mjs    # 一键注册进天枢
 npm run doctor     # 自检：凭据 / 端口 / 产物自包含性
 npm run pack       # 打发布包 → dist/*.zip
@@ -39,7 +52,8 @@ npm run pack       # 打发布包 → dist/*.zip
 
 | 路径 | 作用 |
 | --- | --- |
-| `src/server.mjs` | 桥接本体：固定端口 + 固定 token + 路由 |
+| `src/server.mjs` | 桥接本体：固定端口 + 固定 token + 路由及桌面端受信接口 |
+| `src/desktop/` | Electron 主进程、天枢接入、预加载与控制台界面 |
 | `lib/core.mjs` | 打包好的核心（**已入库**，自包含，仅依赖 `node:*`） |
 | `scripts/build.mjs` | 收拢上游源码并打包成 `lib/core.mjs` |
 | `scripts/setup.mjs` | 调天枢本地 API 注册服务商 |
@@ -73,7 +87,7 @@ dsml-recovery.ts  host-peers.ts  at-rest.ts  status-paths.ts
 | 端口 | 随机 | 固定（天枢要手填 baseUrl） |
 | 鉴权 | 进程内随机 secret | 固定 token（天枢要手填 API Key） |
 | 注册 | DSH 插件系统 | 天枢「自定义服务商」 |
-| 界面 | 设置卡片（React） | 无界面 |
+| 界面 | 设置卡片（React） | 独立桌面控制台 |
 
 上游协议行为逐字一致：强制 `stream:true`、`tool_choice` 压平、
 CLI 形态请求头、DSML 工具调用恢复、账号池故障转移。
@@ -82,8 +96,8 @@ CLI 形态请求头、DSML 工具调用恢复、账号池故障转移。
 
 - **只绑回环**（`127.0.0.1`），不对外网暴露。
 - **必须有 token**：错误 token 一律 401。
-- **凭据只读**：不写 WorkBuddy 桌面端的 auth 文件；刷新后的 token 写到
-  本工具自己的目录。
+- **不修改 WorkBuddy 登录文件**：发现或刷新的凭据保存在当前用户的
+  `~/.dsh/workbuddy-vault/`，供网页登录账号和桥接续期使用；页面进程拿不到凭据。
 - 配置在 `~/.workbuddy-bridge/config.json`（含 token）。
   用 `WORKBUDDY_BRIDGE_HOME` 可改到别处。
 
@@ -104,8 +118,8 @@ CLI 形态请求头、DSML 工具调用恢复、账号池故障转移。
 
 - **只支持 Windows 的安装脚本**。核心 `lib/core.mjs` 是跨平台的，
   只差 `start.cmd` / 自启那层外壳。
-- **必须登录 WorkBuddy 桌面端**。这是转发你自己的账号额度，
-  不存在「装完就能用别人的额度」这回事。
+- **必须使用自己的 WorkBuddy 账号**。可以复用桌面端登录，也可以从独立软件
+  发起腾讯网页登录；不存在「装完就能用别人的额度」这回事。
 - **凭据字段加密**：新版 WorkBuddy 桌面端可能把 `accessToken` 等字段用
   AES-256-GCM 封装，解密密钥来自 App 构建期内置。若 `doctor` 报
   「凭据字段已加密且拿不到密钥」，请设 `WORKBUDDY_APP_EXECUTABLE`。

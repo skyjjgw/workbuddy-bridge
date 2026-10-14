@@ -30,6 +30,7 @@ const NEEDED = [
   'upstream.ts',
   'auth.ts',
   'catalog.ts',
+  'oauth.ts',
   'dsml-recovery.ts',
   'host-peers.ts',
   'at-rest.ts',
@@ -52,7 +53,7 @@ function locatePluginSource() {
     join(ROOT, '..', 'wb-tmp', 'src'),
   ].filter(Boolean)
   for (const dir of candidates) {
-    if (existsSync(join(dir, 'shim.ts'))) return dir
+    if (NEEDED.every(name => existsSync(join(dir, name)))) return dir
   }
 
   // 自动拉上游。浅克隆即可 —— 我们只要当前版本的源码。
@@ -122,6 +123,7 @@ export { WorkBuddyCredentialStore, workbuddyAccountId } from './auth.ts'
 export { WorkBuddyUpstreamClient, regionOf } from './upstream.ts'
 export type { WorkBuddyCredential, WorkBuddyRegion } from './upstream.ts'
 export { WorkBuddyCatalog, fallbackModelsFor } from './catalog.ts'
+export { oauthPoll, oauthStart, regionOfOAuthAccount } from './oauth.ts'
 `
 writeFileSync(join(vendorDir, 'core.ts'), coreTs, 'utf8')
 

@@ -23,6 +23,9 @@ import { dirname, join } from 'node:path'
 
 import {
   createWorkBuddyShim,
+  oauthPoll,
+  oauthStart,
+  regionOfOAuthAccount,
   WorkBuddyCatalog,
   WorkBuddyCredentialStore,
   WorkBuddyUpstreamClient,
@@ -260,6 +263,7 @@ function modelsPayload(region) {
 }
 
 const servers = []
+const listenErrors = {}
 
 for (const region of REGIONS) {
   const port = Number(PORTS[region])
@@ -285,6 +289,7 @@ for (const region of REGIONS) {
     void proxyTo(region)(req, res)
   })
   server.on('error', error => {
+    listenErrors[region] = error.message
     log(`${region}: 端口 ${port} 监听失败 — ${error.message}`)
   })
   server.listen(port, HOST, () => {
@@ -296,14 +301,14 @@ for (const region of REGIONS) {
 // 等两个核心 shim 起来后再刷新目录，否则 baseUrl() 会抛。
 await Promise.all(REGIONS.map(region => stacks[region].shim.ready))
 
-log(`bridge token: ${TOKEN}`)
+log('bridge token: 已加载（为安全起见不写入日志）')
 log(`配置文件: ${CONFIG_FILE}`)
 log('')
 log('天枢「自定义服务商」填写：')
 for (const region of REGIONS) {
   log(`  ${region === 'cn' ? '国内版' : '国际版'}  baseUrl = http://${HOST}:${PORTS[region]}/v1`)
 }
-log(`  API Key = ${TOKEN}`)
+log('  API Key = 使用配置文件中的 token（桌面端可自动注册，无需手抄）')
 
 await Promise.all(REGIONS.map(refreshCatalog))
 
@@ -313,11 +318,206 @@ setInterval(() => {
   for (const region of REGIONS) void refreshCatalog(region)
 }, REFRESH_MS).unref()
 
+/**
+ * 给独立桌面端使用的安全状态视图。这里绝不把 token、凭据路径或天枢
+ * sidecar 密钥交给渲染进程，只返回界面需要的账号、余额和模型元数据。
+ */
+export async function dashboardSnapshot() {
+  const regions = {}
+  for (const region of REGIONS) {
+    const stack = stacks[region]
+    let accounts = []
+    let accountError
+    try {
+      const choices = await stack.store.accounts()
+      accounts = await Promise.all(choices.map(async choice => {
+        let credits
+        let creditsError
+        try {
+          const credential = await stack.store.credentialFor(choice.id)
+          if (credential !== undefined) credits = await client.fetchCredits(credential)
+        } catch (error) {
+          creditsError = error instanceof Error ? error.message : String(error)
+        }
+        return {
+          id: choice.id,
+          name: choice.accountName || '未命名账号',
+          domain: choice.domain,
+          source: choice.source,
+          selected: choice.selected,
+          tokenExpiresAtMs: choice.tokenExpiresAtMs,
+          ...(credits === undefined ? {} : { credits }),
+          ...(creditsError === undefined ? {} : { creditsError }),
+        }
+      }))
+    } catch (error) {
+      accountError = error instanceof Error ? error.message : String(error)
+    }
+    regions[region] = {
+      port: Number(PORTS[region]),
+      baseUrl: `http://${HOST}:${PORTS[region]}/v1`,
+      listening: listenErrors[region] === undefined,
+      ...(listenErrors[region] === undefined ? {} : { listenError: listenErrors[region] }),
+      ...(accountError === undefined ? {} : { accountError }),
+      accounts,
+      models: stack.catalog.current().map(model => ({
+        id: model.id,
+        name: model.name,
+        contextWindow: model.contextWindow,
+        maxTokens: model.maxTokens,
+        multimodal: model.multimodal === true,
+        ...(typeof model.creditMultiplier === 'number'
+          ? { creditMultiplier: model.creditMultiplier }
+          : {}),
+      })),
+      catalog: stack.account,
+    }
+  }
+  return {
+    ok: Object.values(regions).some(region => region.listening),
+    host: HOST,
+    configFile: CONFIG_FILE,
+    regions,
+  }
+}
+
+export async function refreshDashboard() {
+  await Promise.all(REGIONS.map(refreshCatalog))
+  return dashboardSnapshot()
+}
+
+export async function startOAuthLogin(region) {
+  if (!REGIONS.includes(region)) throw new Error(`未知区域：${region}`)
+  return oauthStart(region)
+}
+
+export async function pollOAuthLogin(region, loginId) {
+  if (!REGIONS.includes(region)) throw new Error(`未知区域：${region}`)
+  const answer = await oauthPoll(loginId, region)
+  if (!answer.done || 'error' in answer) return answer
+  const actualRegion = regionOfOAuthAccount(answer.account)
+  if (actualRegion !== region) {
+    return { done: true, error: `登录结果属于 ${actualRegion} 区域，请在对应区域重新登录` }
+  }
+  const accountId = await stacks[region].store.addOAuthAccount({
+    accessToken: answer.account.accessToken,
+    refreshToken: answer.account.refreshToken,
+    expiresAtMs: answer.account.expiresAtMs,
+    ...(answer.account.refreshExpiresAtMs === undefined
+      ? {}
+      : { refreshExpiresAtMs: answer.account.refreshExpiresAtMs }),
+    domain: answer.account.domain,
+    uid: answer.account.uid,
+    ...(answer.account.nickname === undefined ? {} : { nickname: answer.account.nickname }),
+    ...(answer.account.uin === undefined ? {} : { uin: answer.account.uin }),
+    ...(answer.account.enterpriseId === undefined ? {} : { enterpriseId: answer.account.enterpriseId }),
+  })
+  stacks[region].store.selectAccount(accountId)
+  await refreshCatalog(region)
+  const saved = (await stacks[region].store.accounts()).find(account => account.id === accountId)
+  return {
+    done: true,
+    accountId,
+    accountName: saved?.accountName || answer.account.nickname || '未命名账号',
+  }
+}
+
+export async function testBridgeEndpoints() {
+  const results = {}
+  for (const region of REGIONS) {
+    const port = Number(PORTS[region])
+    try {
+      const response = await fetch(`http://${HOST}:${port}/v1/models`, {
+        headers: { authorization: `Bearer ${TOKEN}` },
+        signal: AbortSignal.timeout(10_000),
+      })
+      const body = await response.json()
+      results[region] = response.ok
+        ? { ok: true, models: Array.isArray(body.data) ? body.data.length : 0 }
+        : { ok: false, error: `HTTP ${response.status}` }
+    } catch (error) {
+      results[region] = { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  }
+  return { ok: Object.values(results).every(result => result.ok), regions: results }
+}
+
+/** 仅供受信任的 Electron 主进程注册天枢；不得经 preload 暴露给页面。 */
+export function bridgeRegistrationConfig() {
+  return {
+    token: TOKEN,
+    host: HOST,
+    ports: { cn: Number(PORTS.cn), global: Number(PORTS.global) },
+    models: Object.fromEntries(REGIONS.map(region => [
+      region,
+      stacks[region].catalog.current().map(model => ({
+        id: model.id,
+        contextWindow: model.contextWindow,
+        maxTokens: model.maxTokens,
+        supportsVision: model.multimodal === true,
+      })),
+    ])),
+  }
+}
+
+export async function runModelSmokeTest(region, modelId) {
+  if (!REGIONS.includes(region)) throw new Error(`未知区域：${region}`)
+  const port = Number(PORTS[region])
+  const response = await fetch(`http://${HOST}:${port}/v1/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${TOKEN}`,
+    },
+    body: JSON.stringify({
+      model: modelId,
+      messages: [{ role: 'user', content: '只回复 OK' }],
+      stream: true,
+      // 推理模型可能先消耗若干 reasoning token；8 会出现 HTTP 200 但正文为空。
+      max_tokens: 64,
+    }),
+    signal: AbortSignal.timeout(60_000),
+  })
+  if (!response.ok) {
+    const detail = (await response.text()).slice(0, 500)
+    throw new Error(`HTTP ${response.status}: ${detail}`)
+  }
+  let text = ''
+  let carry = ''
+  const decoder = new TextDecoder()
+  for await (const chunk of response.body) {
+    carry += decoder.decode(chunk, { stream: true })
+    let newline
+    while ((newline = carry.indexOf('\n')) !== -1) {
+      const line = carry.slice(0, newline).trim()
+      carry = carry.slice(newline + 1)
+      if (!line.startsWith('data:')) continue
+      const payload = line.slice(5).trim()
+      if (payload === '[DONE]') continue
+      try {
+        const json = JSON.parse(payload)
+        if (typeof json.choices?.[0]?.delta?.content === 'string') {
+          text += json.choices[0].delta.content
+        }
+      } catch { /* 忽略非 JSON SSE 帧 */ }
+    }
+  }
+  return { ok: text.trim().length > 0, text: text.trim().slice(0, 120) }
+}
+
+let stopping
+export function stopBridge() {
+  stopping ??= Promise.all([
+    ...servers.map(server => new Promise(resolve => server.close(() => resolve()))),
+    ...REGIONS.map(region => stacks[region].shim.close().catch(() => undefined)),
+  ])
+  return stopping
+}
+
 // 优雅退出：让端口立刻释放，避免重启时 EADDRINUSE。
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => {
     log(`收到 ${signal}，正在退出…`)
-    for (const server of servers) server.close()
-    void Promise.all(REGIONS.map(region => stacks[region].shim.close())).finally(() => process.exit(0))
+    void stopBridge().finally(() => process.exit(0))
   })
 }

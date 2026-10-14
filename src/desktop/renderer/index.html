@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'">
+  <title>WorkBuddy Bridge</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="ambient ambient-one"></div>
+  <div class="ambient ambient-two"></div>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">W</div>
+        <div>
+          <h1>WorkBuddy Bridge</h1>
+          <p>把 WorkBuddy 模型安全接入天枢</p>
+        </div>
+      </div>
+      <div class="top-actions">
+        <label class="switch-row" title="登录 Windows 后自动在后台运行">
+          <span>开机自启</span>
+          <input id="autostart" type="checkbox">
+          <i></i>
+        </label>
+        <button class="button secondary" id="test-all">一键检测</button>
+        <button class="button primary" id="register">接入天枢</button>
+      </div>
+    </header>
+
+    <section class="hero panel">
+      <div>
+        <div class="eyebrow"><span id="status-dot" class="status-dot"></span><span id="bridge-status">正在启动桥接…</span></div>
+        <h2>一个界面，管理两套 WorkBuddy 模型。</h2>
+        <p>登录账号、查看积分与模型倍率、验证本地端点，并将服务商自动注册到天枢。</p>
+      </div>
+      <div class="hero-stat">
+        <span>已发现模型</span>
+        <strong id="model-total">—</strong>
+        <small>国内版 + 国际版</small>
+      </div>
+    </section>
+
+    <section id="regions" class="region-grid" aria-live="polite"></section>
+
+    <footer>
+      <span>仅监听 127.0.0.1 · 登录凭据不会进入页面</span>
+      <button class="text-button" id="refresh">刷新数据</button>
+    </footer>
+  </main>
+
+  <div id="toast" class="toast" role="status"></div>
+  <script src="app.js"></script>
+</body>
+</html>
