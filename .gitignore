@@ -1,0 +1,21 @@
+# 本机运行态 —— 绝不能提交（含 API Key）
+data/
+dist/
+*.log
+
+# 构建输入：由 scripts/build.mjs 从上游源码收拢而来，
+# 仓库不带它，重建时自动同步（见 README「它复用了什么」）。
+vendor/
+.upstream/
+
+# 依赖与工具产物
+node_modules/
+*.tsbuildinfo
+.DS_Store
+Thumbs.db
+
+# 注意：lib/core.mjs 是**构建产物但必须提交**。
+# 它是自包含的（仅依赖 node:*），提交后别人 clone 下来无需构建即可直接跑；
+# 也免去让每个使用者都去拉一份上游源码才能打包。
+!lib/
+!lib/core.mjs

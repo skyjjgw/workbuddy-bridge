@@ -1,0 +1,28 @@
+{
+  "name": "workbuddy-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "description": "把本机已登录的 WorkBuddy 模型暴露成本地 OpenAI 兼容端点，供天枢（Tianshu）「自定义服务商」接入",
+  "type": "module",
+  "main": "src/server.mjs",
+  "engines": {
+    "node": ">=22"
+  },
+  "keywords": [
+    "tianshu",
+    "天枢",
+    "workbuddy",
+    "codebuddy",
+    "openai-compatible",
+    "model-provider"
+  ],
+  "license": "MIT",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "node src/server.mjs",
+    "setup": "node scripts/setup.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "pack": "node scripts/pack.mjs",
+    "install-autostart": "node scripts/install-autostart.mjs"
+  }
+}
